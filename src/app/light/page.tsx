@@ -50,8 +50,6 @@ type MappingTemplate = {
 
 type TemplateNoticeTone = "success" | "error" | "info";
 
-const MAPPING_TEMPLATE_STORAGE_KEY = "opsflow-light-mapping-templates-v2";
-
 function escapeCsvCell(value: unknown) {
   const text =
     value === null || value === undefined
@@ -237,7 +235,7 @@ function tryNormalizeDateValue(value: string) {
   return null;
 }
 
-function buildDisplayRows(rows: NormalizedPreviewRow[]) {
+function buildDisplayRows(rows: NormalizedPreviewRow[]): NormalizedPreviewRow[] {
   return rows.map((row) => {
     const itemName = row.itemName.trim();
     const qty = row.qty.trim();
@@ -330,6 +328,20 @@ function sanitizeMapping(raw: unknown): StandardFieldMapping {
   return emptyMapping;
 }
 
+function createTemplateId() {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+
+  return `tpl-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function sortTemplatesByUpdatedAt(templates: MappingTemplate[]) {
+  return [...templates].sort(
+    (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+  );
+}
+
 function parseTemplateArray(raw: unknown): MappingTemplate[] {
   if (!Array.isArray(raw)) {
     return [];
@@ -343,19 +355,23 @@ function parseTemplateArray(raw: unknown): MappingTemplate[] {
     }
 
     const source = item as Record<string, unknown>;
-    const id = typeof source.id === "string" ? source.id : "";
+    const id = typeof source.id === "string" ? source.id : createTemplateId();
     const name = typeof source.name === "string" ? source.name.trim() : "";
     const createdAt =
-      typeof source.createdAt === "string" ? source.createdAt : new Date().toISOString();
+      typeof source.createdAt === "string"
+        ? source.createdAt
+        : new Date().toISOString();
     const updatedAt =
-      typeof source.updatedAt === "string" ? source.updatedAt : new Date().toISOString();
+      typeof source.updatedAt === "string"
+        ? source.updatedAt
+        : new Date().toISOString();
 
     if (!name) {
       continue;
     }
 
     templates.push({
-      id: id || createTemplateId(),
+      id,
       name,
       createdAt,
       updatedAt,
@@ -363,38 +379,7 @@ function parseTemplateArray(raw: unknown): MappingTemplate[] {
     });
   }
 
-  return templates.sort(
-    (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-  );
-}
-
-function readMappingTemplatesFromStorage(): MappingTemplate[] {
-  if (typeof window === "undefined") {
-    return [];
-  }
-
-  try {
-    const raw = window.localStorage.getItem(MAPPING_TEMPLATE_STORAGE_KEY);
-
-    if (!raw) {
-      return [];
-    }
-
-    return parseTemplateArray(JSON.parse(raw));
-  } catch {
-    return [];
-  }
-}
-
-function writeMappingTemplatesToStorage(templates: MappingTemplate[]) {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  window.localStorage.setItem(
-    MAPPING_TEMPLATE_STORAGE_KEY,
-    JSON.stringify(templates)
-  );
+  return sortTemplatesByUpdatedAt(templates);
 }
 
 function buildTemplateApplicableMapping(
@@ -425,12 +410,77 @@ function buildTemplateApplicableMapping(
   };
 }
 
-function createTemplateId() {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
-    return crypto.randomUUID();
+async function fetchMappingTemplatesFromApi() {
+  const response = await fetch("/api/light/templates", {
+    method: "GET",
+    cache: "no-store",
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(
+      typeof data?.message === "string"
+        ? data.message
+        : "템플릿 목록을 불러오는 중 오류가 발생했습니다."
+    );
   }
 
-  return `tpl-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  return parseTemplateArray(data?.templates);
+}
+
+async function saveMappingTemplateToApi(
+  name: string,
+  mapping: StandardFieldMapping
+) {
+  const response = await fetch("/api/light/templates", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      name,
+      mapping,
+    }),
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(
+      typeof data?.message === "string"
+        ? data.message
+        : "템플릿 저장 중 오류가 발생했습니다."
+    );
+  }
+
+  const templates = parseTemplateArray([data?.template]);
+  const template = templates[0];
+
+  if (!template) {
+    throw new Error("저장된 템플릿 정보를 읽을 수 없습니다.");
+  }
+
+  return {
+    action: data?.action === "updated" ? "updated" : "created",
+    template,
+  } as const;
+}
+
+async function deleteMappingTemplateFromApi(id: string) {
+  const response = await fetch(`/api/light/templates/${id}`, {
+    method: "DELETE",
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(
+      typeof data?.message === "string"
+        ? data.message
+        : "템플릿 삭제 중 오류가 발생했습니다."
+    );
+  }
 }
 
 function FilterButton({
@@ -524,6 +574,8 @@ export default function LightPage() {
   const [templateNoticeTone, setTemplateNoticeTone] =
     useState<TemplateNoticeTone>("info");
   const [templateImportInputKey, setTemplateImportInputKey] = useState(0);
+  const [templateLoading, setTemplateLoading] = useState(true);
+  const [templateSubmitting, setTemplateSubmitting] = useState(false);
 
   const templateImportInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -555,7 +607,45 @@ export default function LightPage() {
   }
 
   useEffect(() => {
-    setMappingTemplates(readMappingTemplatesFromStorage());
+    let isMounted = true;
+
+    async function loadTemplates() {
+      try {
+        setTemplateLoading(true);
+        const templates = await fetchMappingTemplatesFromApi();
+
+        if (!isMounted) {
+          return;
+        }
+
+        setMappingTemplates(templates);
+        setSelectedTemplateId((prev) =>
+          templates.some((template) => template.id === prev) ? prev : ""
+        );
+      } catch (error) {
+        if (!isMounted) {
+          return;
+        }
+
+        const message =
+          error instanceof Error
+            ? error.message
+            : "템플릿 목록을 불러오는 중 오류가 발생했습니다.";
+
+        setTemplateNoticeTone("error");
+        setTemplateNotice(message);
+      } finally {
+        if (isMounted) {
+          setTemplateLoading(false);
+        }
+      }
+    }
+
+    loadTemplates();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -708,7 +798,15 @@ export default function LightPage() {
     validDisplayRows.length > 0 && Boolean(result);
   const canDownloadErrorNormalizedCsv =
     errorDisplayRows.length > 0 && Boolean(result);
-  const canSaveTemplate = mappedFieldCount > 0;
+  const canSaveTemplate = mappedFieldCount > 0 && !templateSubmitting;
+
+  function setTemplateNoticeMessage(
+    tone: TemplateNoticeTone,
+    message: string
+  ) {
+    setTemplateNoticeTone(tone);
+    setTemplateNotice(message);
+  }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -771,14 +869,6 @@ export default function LightPage() {
     }));
   }
 
-  function setTemplateNoticeMessage(
-    tone: TemplateNoticeTone,
-    message: string
-  ) {
-    setTemplateNoticeTone(tone);
-    setTemplateNotice(message);
-  }
-
   function handleResetAutoMapping() {
     if (!result) {
       return;
@@ -796,7 +886,7 @@ export default function LightPage() {
     setTemplateNoticeMessage("info", "현재 매핑을 모두 비웠습니다.");
   }
 
-  function handleSaveMappingTemplate() {
+  async function handleSaveMappingTemplate() {
     const trimmedName = templateName.trim();
 
     if (!trimmedName) {
@@ -804,64 +894,43 @@ export default function LightPage() {
       return;
     }
 
-    if (!canSaveTemplate) {
+    if (mappedFieldCount === 0) {
       setTemplateNoticeMessage("error", "저장할 매핑이 없습니다.");
       return;
     }
 
-    const now = new Date().toISOString();
-    const existing = mappingTemplates.find(
-      (template) => template.name.trim().toLowerCase() === trimmedName.toLowerCase()
-    );
+    try {
+      setTemplateSubmitting(true);
 
-    let nextTemplates: MappingTemplate[];
+      const { action, template } = await saveMappingTemplateToApi(
+        trimmedName,
+        mapping
+      );
 
-    if (existing) {
-      nextTemplates = mappingTemplates
-        .map((template) =>
-          template.id === existing.id
-            ? {
-                ...template,
-                name: trimmedName,
-                mapping: { ...mapping },
-                updatedAt: now,
-              }
-            : template
-        )
-        .sort(
-          (a, b) =>
-            new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-        );
+      setMappingTemplates((prev) => {
+        const withoutCurrent = prev.filter((item) => item.id !== template.id);
+        return sortTemplatesByUpdatedAt([template, ...withoutCurrent]);
+      });
 
-      setSelectedTemplateId(existing.id);
+      setSelectedTemplateId(template.id);
+      setTemplateName("");
+
       setTemplateNoticeMessage(
         "success",
-        `"${trimmedName}" 템플릿을 덮어써서 저장했습니다.`
+        action === "updated"
+          ? `"${trimmedName}" 템플릿을 덮어써서 저장했습니다.`
+          : `"${trimmedName}" 템플릿을 저장했습니다.`
       );
-    } else {
-      const newTemplate: MappingTemplate = {
-        id: createTemplateId(),
-        name: trimmedName,
-        mapping: { ...mapping },
-        createdAt: now,
-        updatedAt: now,
-      };
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "템플릿 저장 중 오류가 발생했습니다.";
 
-      nextTemplates = [newTemplate, ...mappingTemplates].sort(
-        (a, b) =>
-          new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-      );
-
-      setSelectedTemplateId(newTemplate.id);
-      setTemplateNoticeMessage(
-        "success",
-        `"${trimmedName}" 템플릿을 저장했습니다.`
-      );
+      setTemplateNoticeMessage("error", message);
+    } finally {
+      setTemplateSubmitting(false);
     }
-
-    setMappingTemplates(nextTemplates);
-    writeMappingTemplatesToStorage(nextTemplates);
-    setTemplateName("");
   }
 
   function handleApplyMappingTemplate(template: MappingTemplate) {
@@ -896,7 +965,7 @@ export default function LightPage() {
     }
   }
 
-  function handleDeleteMappingTemplate(template: MappingTemplate) {
+  async function handleDeleteMappingTemplate(template: MappingTemplate) {
     const confirmed = window.confirm(
       `"${template.name}" 템플릿을 삭제할까요?`
     );
@@ -905,21 +974,34 @@ export default function LightPage() {
       return;
     }
 
-    const nextTemplates = mappingTemplates.filter(
-      (item) => item.id !== template.id
-    );
+    try {
+      setTemplateSubmitting(true);
+      await deleteMappingTemplateFromApi(template.id);
 
-    setMappingTemplates(nextTemplates);
-    writeMappingTemplatesToStorage(nextTemplates);
+      const nextTemplates = mappingTemplates.filter(
+        (item) => item.id !== template.id
+      );
 
-    if (selectedTemplateId === template.id) {
-      setSelectedTemplateId("");
+      setMappingTemplates(nextTemplates);
+
+      if (selectedTemplateId === template.id) {
+        setSelectedTemplateId("");
+      }
+
+      setTemplateNoticeMessage(
+        "success",
+        `"${template.name}" 템플릿을 삭제했습니다.`
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "템플릿 삭제 중 오류가 발생했습니다.";
+
+      setTemplateNoticeMessage("error", message);
+    } finally {
+      setTemplateSubmitting(false);
     }
-
-    setTemplateNoticeMessage(
-      "success",
-      `"${template.name}" 템플릿을 삭제했습니다.`
-    );
   }
 
   function handleExportTemplates() {
@@ -958,6 +1040,8 @@ export default function LightPage() {
     }
 
     try {
+      setTemplateSubmitting(true);
+
       const text = await file.text();
       const importedTemplates = parseTemplateArray(JSON.parse(text));
 
@@ -969,53 +1053,24 @@ export default function LightPage() {
         return;
       }
 
-      const now = new Date().toISOString();
-      const existingByName = new Map(
-        mappingTemplates.map((template) => [
-          template.name.trim().toLowerCase(),
-          template,
-        ])
-      );
-
       let addedCount = 0;
       let updatedCount = 0;
 
-      const mergedMap = new Map<string, MappingTemplate>();
-
-      for (const template of mappingTemplates) {
-        mergedMap.set(template.id, template);
-      }
-
       for (const imported of importedTemplates) {
-        const nameKey = imported.name.trim().toLowerCase();
-        const existing = existingByName.get(nameKey);
+        const { action } = await saveMappingTemplateToApi(
+          imported.name,
+          imported.mapping
+        );
 
-        if (existing) {
-          mergedMap.set(existing.id, {
-            ...existing,
-            name: imported.name,
-            mapping: { ...imported.mapping },
-            updatedAt: now,
-          });
+        if (action === "updated") {
           updatedCount += 1;
         } else {
-          mergedMap.set(imported.id, {
-            ...imported,
-            id: imported.id || createTemplateId(),
-            createdAt: imported.createdAt || now,
-            updatedAt: imported.updatedAt || now,
-          });
           addedCount += 1;
         }
       }
 
-      const nextTemplates = Array.from(mergedMap.values()).sort(
-        (a, b) =>
-          new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-      );
-
-      setMappingTemplates(nextTemplates);
-      writeMappingTemplatesToStorage(nextTemplates);
+      const refreshedTemplates = await fetchMappingTemplatesFromApi();
+      setMappingTemplates(refreshedTemplates);
 
       setTemplateNoticeMessage(
         "success",
@@ -1027,6 +1082,7 @@ export default function LightPage() {
         "템플릿 가져오기에 실패했습니다. JSON 파일 형식을 확인해주세요."
       );
     } finally {
+      setTemplateSubmitting(false);
       setTemplateImportInputKey((prev) => prev + 1);
     }
   }
@@ -1575,8 +1631,7 @@ export default function LightPage() {
                       fontSize: "13px",
                     }}
                   >
-                    현재 브라우저의 로컬 저장소에 저장되며, JSON 파일로 백업/복원이
-                    가능합니다.
+                    현재 서버 DB에 저장되며, JSON 파일로 백업/복원이 가능합니다.
                   </p>
                 </div>
 
@@ -1590,14 +1645,19 @@ export default function LightPage() {
                   <button
                     type="button"
                     onClick={handleExportTemplates}
+                    disabled={templateLoading || templateSubmitting}
                     style={{
                       border: "1px solid #d1d5db",
-                      background: "#ffffff",
+                      background:
+                        templateLoading || templateSubmitting ? "#f3f4f6" : "#ffffff",
                       color: "#111827",
                       borderRadius: "12px",
                       padding: "10px 14px",
                       fontWeight: 700,
-                      cursor: "pointer",
+                      cursor:
+                        templateLoading || templateSubmitting
+                          ? "not-allowed"
+                          : "pointer",
                     }}
                   >
                     템플릿 JSON 내보내기
@@ -1606,14 +1666,19 @@ export default function LightPage() {
                   <button
                     type="button"
                     onClick={handleOpenImportTemplates}
+                    disabled={templateLoading || templateSubmitting}
                     style={{
                       border: "1px solid #d1d5db",
-                      background: "#ffffff",
+                      background:
+                        templateLoading || templateSubmitting ? "#f3f4f6" : "#ffffff",
                       color: "#111827",
                       borderRadius: "12px",
                       padding: "10px 14px",
                       fontWeight: 700,
-                      cursor: "pointer",
+                      cursor:
+                        templateLoading || templateSubmitting
+                          ? "not-allowed"
+                          : "pointer",
                     }}
                   >
                     템플릿 JSON 가져오기
@@ -1668,9 +1733,18 @@ export default function LightPage() {
                     cursor: canSaveTemplate ? "pointer" : "not-allowed",
                   }}
                 >
-                  현재 매핑 템플릿 저장
+                  {templateSubmitting ? "저장 중..." : "현재 매핑 템플릿 저장"}
                 </button>
               </div>
+
+              {templateLoading ? (
+                <div style={{ marginTop: "16px" }}>
+                  <NoticeBox
+                    tone="info"
+                    message="저장된 템플릿 목록을 불러오는 중입니다."
+                  />
+                </div>
+              ) : null}
 
               {templateNotice ? (
                 <div style={{ marginTop: "16px" }}>
@@ -1678,7 +1752,7 @@ export default function LightPage() {
                 </div>
               ) : null}
 
-              {templateSummaries.length ? (
+              {!templateLoading && templateSummaries.length ? (
                 <div
                   style={{
                     display: "grid",
@@ -1808,15 +1882,19 @@ export default function LightPage() {
                         <button
                           type="button"
                           onClick={() => handleApplyMappingTemplate(template)}
-                          disabled={!result}
+                          disabled={!result || templateSubmitting}
                           style={{
-                            background: result ? "#111827" : "#9ca3af",
+                            background:
+                              result && !templateSubmitting ? "#111827" : "#9ca3af",
                             color: "#ffffff",
                             border: "none",
                             borderRadius: "12px",
                             padding: "10px 14px",
                             fontWeight: 700,
-                            cursor: result ? "pointer" : "not-allowed",
+                            cursor:
+                              result && !templateSubmitting
+                                ? "pointer"
+                                : "not-allowed",
                           }}
                         >
                           템플릿 적용
@@ -1832,14 +1910,15 @@ export default function LightPage() {
                               `"${template.name}" 이름으로 덮어써 저장하려면 저장 버튼을 누르세요.`
                             );
                           }}
+                          disabled={templateSubmitting}
                           style={{
                             border: "1px solid #d1d5db",
-                            background: "#ffffff",
+                            background: templateSubmitting ? "#f3f4f6" : "#ffffff",
                             color: "#111827",
                             borderRadius: "12px",
                             padding: "10px 14px",
                             fontWeight: 700,
-                            cursor: "pointer",
+                            cursor: templateSubmitting ? "not-allowed" : "pointer",
                           }}
                         >
                           이름 불러오기
@@ -1848,14 +1927,15 @@ export default function LightPage() {
                         <button
                           type="button"
                           onClick={() => handleDeleteMappingTemplate(template)}
+                          disabled={templateSubmitting}
                           style={{
                             border: "1px solid #fecaca",
-                            background: "#ffffff",
+                            background: templateSubmitting ? "#fef2f2" : "#ffffff",
                             color: "#b91c1c",
                             borderRadius: "12px",
                             padding: "10px 14px",
                             fontWeight: 700,
-                            cursor: "pointer",
+                            cursor: templateSubmitting ? "not-allowed" : "pointer",
                           }}
                         >
                           삭제
@@ -1864,14 +1944,14 @@ export default function LightPage() {
                     </div>
                   ))}
                 </div>
-              ) : (
+              ) : !templateLoading ? (
                 <div style={{ marginTop: "16px" }}>
                   <NoticeBox
                     tone="info"
                     message="아직 저장된 매핑 템플릿이 없습니다. 현재 매핑을 만든 뒤 템플릿으로 저장해두면 다음 업로드에서 바로 재사용할 수 있습니다."
                   />
                 </div>
-              )}
+              ) : null}
             </div>
 
             <div
