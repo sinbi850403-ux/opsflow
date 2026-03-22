@@ -5,9 +5,36 @@ import type { LightPreviewResult, LightPreviewRow } from "../../types/light";
 
 export default function LightPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedSheetName, setSelectedSheetName] = useState("");
   const [result, setResult] = useState<LightPreviewResult | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
   const [loading, setLoading] = useState(false);
+
+  async function requestPreview(file: File, sheetName?: string) {
+    const formData = new FormData();
+    formData.append("file", file);
+
+    if (sheetName) {
+      formData.append("sheetName", sheetName);
+    }
+
+    const response = await fetch("/api/light/preview", {
+      method: "POST",
+      body: formData,
+    });
+
+    const data: LightPreviewResult | { message?: string } = await response.json();
+
+    if (!response.ok) {
+      throw new Error(
+        "message" in data
+          ? data.message ?? "업로드 중 오류가 발생했습니다."
+          : "업로드 중 오류가 발생했습니다."
+      );
+    }
+
+    return data as LightPreviewResult;
+  }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -23,26 +50,39 @@ export default function LightPage() {
     setResult(null);
 
     try {
-      const formData = new FormData();
-      formData.append("file", selectedFile);
-
-      const response = await fetch("/api/light/preview", {
-        method: "POST",
-        body: formData,
-      });
-
-      const data: LightPreviewResult | { message?: string } = await response.json();
-
-      if (!response.ok) {
-        throw new Error(
-          "message" in data ? data.message ?? "업로드 중 오류가 발생했습니다." : "업로드 중 오류가 발생했습니다."
-        );
-      }
-
-      setResult(data as LightPreviewResult);
+      const previewResult = await requestPreview(selectedFile, selectedSheetName);
+      setResult(previewResult);
+      setSelectedSheetName(previewResult.sheetName);
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "업로드 중 오류가 발생했습니다.";
+
+      setErrorMessage(message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleSheetChange(
+    event: React.ChangeEvent<HTMLSelectElement>
+  ) {
+    const nextSheetName = event.target.value;
+    setSelectedSheetName(nextSheetName);
+
+    if (!selectedFile) {
+      return;
+    }
+
+    setLoading(true);
+    setErrorMessage("");
+
+    try {
+      const previewResult = await requestPreview(selectedFile, nextSheetName);
+      setResult(previewResult);
+      setSelectedSheetName(previewResult.sheetName);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "시트 변경 중 오류가 발생했습니다.";
 
       setErrorMessage(message);
     } finally {
@@ -107,8 +147,8 @@ export default function LightPage() {
               color: "#4b5563",
             }}
           >
-            엑셀 또는 CSV 파일을 업로드하면 첫 번째 시트 기준으로 상위 20행을
-            미리 보여줍니다.
+            엑셀 또는 CSV 파일을 업로드하면 원하는 시트를 선택해서 상위 20행을
+            미리 볼 수 있습니다.
           </p>
 
           <form
@@ -126,6 +166,7 @@ export default function LightPage() {
               onChange={(event) => {
                 const file = event.target.files?.[0] ?? null;
                 setSelectedFile(file);
+                setSelectedSheetName("");
                 setErrorMessage("");
                 setResult(null);
               }}
@@ -166,6 +207,48 @@ export default function LightPage() {
               </span>
             </div>
           </form>
+
+          {result && result.sheetNames.length > 1 ? (
+            <div
+              style={{
+                marginTop: "20px",
+                display: "flex",
+                flexDirection: "column",
+                gap: "8px",
+                maxWidth: "320px",
+              }}
+            >
+              <label
+                htmlFor="sheetName"
+                style={{
+                  fontSize: "14px",
+                  fontWeight: 700,
+                  color: "#374151",
+                }}
+              >
+                시트 선택
+              </label>
+
+              <select
+                id="sheetName"
+                value={selectedSheetName}
+                onChange={handleSheetChange}
+                disabled={loading}
+                style={{
+                  border: "1px solid #d1d5db",
+                  borderRadius: "14px",
+                  padding: "12px 14px",
+                  background: "#ffffff",
+                }}
+              >
+                {result.sheetNames.map((sheetName: string) => (
+                  <option key={sheetName} value={sheetName}>
+                    {sheetName}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : null}
 
           {errorMessage ? (
             <div

@@ -16,23 +16,54 @@ function isMeaningfulRow(row: unknown[]) {
   return row.some((cell) => String(cell ?? "").trim() !== "");
 }
 
+function looksBrokenKorean(text: string) {
+  return /ï|¿½|ë|ì|ê|Ã|Â/.test(text);
+}
+
+function readCsvWorkbook(buffer: Buffer) {
+  const utf8Text = iconv.decode(buffer, "utf-8");
+  const utf8Workbook = XLSX.read(utf8Text, { type: "string" });
+
+  const firstSheetName = utf8Workbook.SheetNames[0];
+  const firstSheet = firstSheetName
+    ? utf8Workbook.Sheets[firstSheetName]
+    : undefined;
+
+  const firstCell =
+    firstSheet?.A1?.w ??
+    firstSheet?.A1?.v?.toString() ??
+    "";
+
+  if (!looksBrokenKorean(firstCell)) {
+    return utf8Workbook;
+  }
+
+  const cp949Text = iconv.decode(buffer, "cp949");
+  return XLSX.read(cp949Text, { type: "string" });
+}
+
 function buildPreviewResult(
   workbook: XLSX.WorkBook,
-  fileName: string
+  fileName: string,
+  selectedSheetName?: string
 ): LightPreviewResult {
   if (!workbook.SheetNames.length) {
     throw new Error("시트를 찾을 수 없습니다.");
   }
 
   const sheetNames = workbook.SheetNames;
-  const firstSheetName = sheetNames[0];
-  const firstSheet = workbook.Sheets[firstSheetName];
+  const activeSheetName =
+    selectedSheetName && sheetNames.includes(selectedSheetName)
+      ? selectedSheetName
+      : sheetNames[0];
 
-  if (!firstSheet) {
-    throw new Error("첫 번째 시트를 읽을 수 없습니다.");
+  const activeSheet = workbook.Sheets[activeSheetName];
+
+  if (!activeSheet) {
+    throw new Error("선택한 시트를 읽을 수 없습니다.");
   }
 
-  const matrix = XLSX.utils.sheet_to_json(firstSheet, {
+  const matrix = XLSX.utils.sheet_to_json(activeSheet, {
     header: 1,
     raw: false,
     defval: "",
@@ -42,7 +73,7 @@ function buildPreviewResult(
   if (!matrix.length) {
     return {
       fileName,
-      sheetName: firstSheetName,
+      sheetName: activeSheetName,
       sheetNames,
       headers: [],
       rows: [],
@@ -71,7 +102,7 @@ function buildPreviewResult(
 
   return {
     fileName,
-    sheetName: firstSheetName,
+    sheetName: activeSheetName,
     sheetNames,
     headers,
     rows,
@@ -80,35 +111,10 @@ function buildPreviewResult(
   };
 }
 
-function looksBrokenKorean(text: string) {
-  return /ï|¿½|ë|ì|ê|Ã|Â/.test(text);
-}
-
-function readCsvWorkbook(buffer: Buffer) {
-  const utf8Text = iconv.decode(buffer, "utf-8");
-  const utf8Workbook = XLSX.read(utf8Text, { type: "string" });
-
-  const firstSheetName = utf8Workbook.SheetNames[0];
-  const firstSheet = firstSheetName
-    ? utf8Workbook.Sheets[firstSheetName]
-    : undefined;
-
-  const firstCell =
-    firstSheet?.A1?.w ??
-    firstSheet?.A1?.v?.toString() ??
-    "";
-
-  if (!looksBrokenKorean(firstCell)) {
-    return utf8Workbook;
-  }
-
-  const cp949Text = iconv.decode(buffer, "cp949");
-  return XLSX.read(cp949Text, { type: "string" });
-}
-
 export function readWorkbookPreview(
   buffer: Buffer,
-  fileName: string
+  fileName: string,
+  selectedSheetName?: string
 ): LightPreviewResult {
   const lowerFileName = fileName.toLowerCase();
 
@@ -117,5 +123,5 @@ export function readWorkbookPreview(
       ? readCsvWorkbook(buffer)
       : XLSX.read(buffer, { type: "buffer" });
 
-  return buildPreviewResult(workbook, fileName);
+  return buildPreviewResult(workbook, fileName, selectedSheetName);
 }

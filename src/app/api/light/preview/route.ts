@@ -15,6 +15,11 @@ export async function POST(request: Request) {
   try {
     const formData = await request.formData();
     const file = formData.get("file");
+    const sheetNameValue = formData.get("sheetName");
+    const sheetName =
+      typeof sheetNameValue === "string" && sheetNameValue.trim()
+        ? sheetNameValue.trim()
+        : undefined;
 
     if (!(file instanceof File)) {
       return NextResponse.json(
@@ -46,7 +51,7 @@ export async function POST(request: Request) {
 
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
-    const result = readWorkbookPreview(buffer, file.name);
+    const result = readWorkbookPreview(buffer, file.name, sheetName);
 
     return NextResponse.json(result);
   } catch (error) {
