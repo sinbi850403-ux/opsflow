@@ -1,12 +1,29 @@
 "use client";
 
-import { useState } from "react";
-import type { LightPreviewResult, LightPreviewRow } from "../../types/light";
+import { useEffect, useMemo, useState } from "react";
+import type {
+  LightPreviewResult,
+  LightPreviewRow,
+  NormalizedPreviewRow,
+  StandardFieldKey,
+  StandardFieldMapping,
+} from "../../types/light";
+import {
+  STANDARD_FIELDS,
+  buildInitialMapping,
+  buildNormalizedRows,
+  countMappedFields,
+  createEmptyMapping,
+  findDuplicateMappedHeaders,
+} from "../../lib/light/field-mapping";
 
 export default function LightPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [selectedSheetName, setSelectedSheetName] = useState("");
   const [result, setResult] = useState<LightPreviewResult | null>(null);
+  const [mapping, setMapping] = useState<StandardFieldMapping>(
+    createEmptyMapping()
+  );
   const [errorMessage, setErrorMessage] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -23,7 +40,8 @@ export default function LightPage() {
       body: formData,
     });
 
-    const data: LightPreviewResult | { message?: string } = await response.json();
+    const data: LightPreviewResult | { message?: string } =
+      await response.json();
 
     if (!response.ok) {
       throw new Error(
@@ -35,6 +53,31 @@ export default function LightPage() {
 
     return data as LightPreviewResult;
   }
+
+  useEffect(() => {
+    if (!result) {
+      setMapping(createEmptyMapping());
+      return;
+    }
+
+    setMapping(buildInitialMapping(result.headers));
+  }, [result]);
+
+  const normalizedRows = useMemo<NormalizedPreviewRow[]>(() => {
+    if (!result) {
+      return [];
+    }
+
+    return buildNormalizedRows(result.rows, mapping);
+  }, [result, mapping]);
+
+  const mappedFieldCount = useMemo(() => {
+    return countMappedFields(mapping);
+  }, [mapping]);
+
+  const duplicateMappedHeaders = useMemo(() => {
+    return findDuplicateMappedHeaders(mapping);
+  }, [mapping]);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -88,6 +131,16 @@ export default function LightPage() {
     } finally {
       setLoading(false);
     }
+  }
+
+  function handleMappingChange(
+    fieldKey: StandardFieldKey,
+    header: string
+  ) {
+    setMapping((prev) => ({
+      ...prev,
+      [fieldKey]: header,
+    }));
   }
 
   return (
@@ -147,8 +200,8 @@ export default function LightPage() {
               color: "#4b5563",
             }}
           >
-            엑셀 또는 CSV 파일을 업로드하면 원하는 시트를 선택해서 상위 20행을
-            미리 볼 수 있습니다.
+            엑셀 또는 CSV 파일을 업로드하면 원하는 시트를 선택하고, 표준 필드로
+            자동 매핑된 결과를 미리 볼 수 있습니다.
           </p>
 
           <form
@@ -299,6 +352,150 @@ export default function LightPage() {
                 boxShadow: "0 10px 30px rgba(0,0,0,0.06)",
               }}
             >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: "12px",
+                  flexWrap: "wrap",
+                }}
+              >
+                <div>
+                  <h2
+                    style={{
+                      marginTop: 0,
+                      marginBottom: "8px",
+                      fontSize: "22px",
+                    }}
+                  >
+                    컬럼 매핑
+                  </h2>
+
+                  <p
+                    style={{
+                      marginTop: 0,
+                      marginBottom: 0,
+                      color: "#6b7280",
+                    }}
+                  >
+                    업로드된 헤더를 표준 필드에 자동 연결했습니다. 필요하면 직접
+                    바꿔주세요.
+                  </p>
+                </div>
+
+                <div
+                  style={{
+                    padding: "10px 14px",
+                    borderRadius: "999px",
+                    background: "#f3f4f6",
+                    fontSize: "14px",
+                    fontWeight: 700,
+                    color: "#111827",
+                  }}
+                >
+                  매핑 완료 {mappedFieldCount} / {STANDARD_FIELDS.length}
+                </div>
+              </div>
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                  gap: "16px",
+                  marginTop: "20px",
+                }}
+              >
+                {STANDARD_FIELDS.map((field) => (
+                  <div
+                    key={field.key}
+                    style={{
+                      border: "1px solid #e5e7eb",
+                      borderRadius: "18px",
+                      padding: "18px",
+                      background: "#fafafa",
+                    }}
+                  >
+                    <p
+                      style={{
+                        margin: 0,
+                        fontSize: "15px",
+                        fontWeight: 700,
+                        color: "#111827",
+                      }}
+                    >
+                      {field.label}
+                      {field.required ? (
+                        <span style={{ color: "#dc2626", marginLeft: "6px" }}>
+                          *
+                        </span>
+                      ) : null}
+                    </p>
+
+                    <p
+                      style={{
+                        marginTop: "8px",
+                        marginBottom: "12px",
+                        fontSize: "13px",
+                        color: "#6b7280",
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      {field.description}
+                    </p>
+
+                    <select
+                      value={mapping[field.key]}
+                      onChange={(event) =>
+                        handleMappingChange(field.key, event.target.value)
+                      }
+                      style={{
+                        width: "100%",
+                        border: "1px solid #d1d5db",
+                        borderRadius: "12px",
+                        padding: "10px 12px",
+                        background: "#ffffff",
+                      }}
+                    >
+                      <option value="">선택 안 함</option>
+                      {result.headers.map((header: string) => (
+                        <option key={`${field.key}-${header}`} value={header}>
+                          {header}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ))}
+              </div>
+
+              {duplicateMappedHeaders.length ? (
+                <div
+                  style={{
+                    marginTop: "16px",
+                    background: "#fff7ed",
+                    border: "1px solid #fdba74",
+                    color: "#9a3412",
+                    borderRadius: "14px",
+                    padding: "14px 16px",
+                    fontSize: "14px",
+                  }}
+                >
+                  같은 헤더가 여러 표준 필드에 중복 선택되었습니다:{" "}
+                  {duplicateMappedHeaders.join(", ")}
+                </div>
+              ) : null}
+            </div>
+
+            <div
+              style={{
+                marginTop: "20px",
+                background: "#ffffff",
+                border: "1px solid #e5e7eb",
+                borderRadius: "24px",
+                padding: "24px",
+                boxShadow: "0 10px 30px rgba(0,0,0,0.06)",
+              }}
+            >
               <h2
                 style={{
                   marginTop: 0,
@@ -306,7 +503,7 @@ export default function LightPage() {
                   fontSize: "22px",
                 }}
               >
-                시트 목록
+                표준 필드 미리보기
               </h2>
 
               <p
@@ -316,6 +513,109 @@ export default function LightPage() {
                   color: "#6b7280",
                 }}
               >
+                현재 매핑 기준으로 정규화된 결과를 미리 보여줍니다.
+              </p>
+
+              <div
+                style={{
+                  overflowX: "auto",
+                  border: "1px solid #e5e7eb",
+                  borderRadius: "16px",
+                }}
+              >
+                <table
+                  style={{
+                    width: "100%",
+                    borderCollapse: "collapse",
+                    minWidth: 700,
+                    background: "#ffffff",
+                  }}
+                >
+                  <thead style={{ background: "#f9fafb" }}>
+                    <tr>
+                      {STANDARD_FIELDS.map((field) => (
+                        <th
+                          key={`normalized-${field.key}`}
+                          style={{
+                            padding: "12px",
+                            textAlign: "left",
+                            borderBottom: "1px solid #e5e7eb",
+                            fontSize: "14px",
+                          }}
+                        >
+                          {field.label}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {normalizedRows.length ? (
+                      normalizedRows.map(
+                        (row: NormalizedPreviewRow, rowIndex: number) => (
+                          <tr key={`normalized-row-${rowIndex}`}>
+                            {STANDARD_FIELDS.map((field) => (
+                              <td
+                                key={`${rowIndex}-${field.key}`}
+                                style={{
+                                  padding: "12px",
+                                  borderBottom: "1px solid #f3f4f6",
+                                  fontSize: "14px",
+                                  verticalAlign: "top",
+                                }}
+                              >
+                                {row[field.key]}
+                              </td>
+                            ))}
+                          </tr>
+                        )
+                      )
+                    ) : (
+                      <tr>
+                        <td
+                          colSpan={STANDARD_FIELDS.length}
+                          style={{
+                            padding: "20px",
+                            textAlign: "center",
+                            color: "#6b7280",
+                          }}
+                        >
+                          표시할 데이터가 없습니다.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div
+              style={{
+                marginTop: "20px",
+                background: "#ffffff",
+                border: "1px solid #e5e7eb",
+                borderRadius: "24px",
+                padding: "24px",
+                boxShadow: "0 10px 30px rgba(0,0,0,0.06)",
+              }}
+            >
+              <h2
+                style={{
+                  marginTop: 0,
+                  marginBottom: "8px",
+                  fontSize: "22px",
+                }}
+              >
+                원본 시트 미리보기
+              </h2>
+
+              <p
+                style={{
+                  marginTop: 0,
+                  marginBottom: "20px",
+                  color: "#6b7280",
+                }}
+              >
+                현재 선택한 시트의 원본 데이터입니다. 시트 목록:{" "}
                 {result.sheetNames.join(", ")}
               </p>
 

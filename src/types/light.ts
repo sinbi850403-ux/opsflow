@@ -9,3 +9,9 @@ export type LightPreviewResult = {
   rowCount: number;
   previewCount: number;
 };
+
+export type StandardFieldKey = "itemName" | "qty" | "amount" | "date";
+
+export type StandardFieldMapping = Record<StandardFieldKey, string>;
+
+export type NormalizedPreviewRow = Record<StandardFieldKey, string>;
