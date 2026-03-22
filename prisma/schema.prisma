@@ -1,0 +1,95 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum RequestStatus {
+  new
+  reviewing
+  in_progress
+  waiting_external
+  done
+  on_hold
+}
+
+enum RequestPriority {
+  low
+  medium
+  high
+  urgent
+}
+
+enum RequestType {
+  cs
+  order
+  purchase
+  delivery
+  refund
+  internal
+  other
+}
+
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  password  String
+  role      String   @default("member")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  requests   Request[]  @relation("CreatedBy")
+  assignedTo Request[]  @relation("AssignedTo")
+  memos      Memo[]
+  activities Activity[]
+}
+
+model Request {
+  id               String          @id @default(cuid())
+  title            String
+  description      String?
+  type             RequestType     @default(other)
+  status           RequestStatus   @default(new)
+  priority         RequestPriority @default(medium)
+  requesterName    String?
+  requesterContact String?
+  source           String?
+  dueDate          DateTime?
+
+  createdById String
+  createdBy   User   @relation("CreatedBy", fields: [createdById], references: [id])
+
+  assigneeId String?
+  assignee   User?  @relation("AssignedTo", fields: [assigneeId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memos      Memo[]
+  activities Activity[]
+}
+
+model Memo {
+  id        String   @id @default(cuid())
+  content   String
+  requestId String
+  request   Request  @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User     @relation(fields: [authorId], references: [id])
+  createdAt DateTime @default(now())
+}
+
+model Activity {
+  id        String   @id @default(cuid())
+  type      String
+  message   String
+  requestId String
+  request   Request  @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  createdAt DateTime @default(now())
+}
