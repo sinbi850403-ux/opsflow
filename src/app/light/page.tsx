@@ -17,6 +17,38 @@ import {
   findDuplicateMappedHeaders,
 } from "../../lib/light/field-mapping";
 
+function escapeCsvCell(value: unknown) {
+  const text =
+    value === null || value === undefined ? "" : String(value).replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const escaped = text.replace(/"/g, '""');
+
+  if (/[",\n]/.test(escaped)) {
+    return `"${escaped}"`;
+  }
+
+  return escaped;
+}
+
+function buildNormalizedCsvText(rows: NormalizedPreviewRow[]) {
+  const headers = STANDARD_FIELDS.map((field) => field.label);
+  const lines = [
+    headers.map((header) => escapeCsvCell(header)).join(","),
+    ...rows.map((row) =>
+      STANDARD_FIELDS.map((field) => escapeCsvCell(row[field.key])).join(",")
+    ),
+  ];
+
+  return lines.join("\r\n");
+}
+
+function createNormalizedCsvFileName(fileName: string, sheetName: string) {
+  const baseName = fileName.replace(/\.[^/.]+$/, "");
+  const safeBaseName = baseName.replace(/[\\/:*?"<>|]/g, "-");
+  const safeSheetName = sheetName.replace(/[\\/:*?"<>|]/g, "-");
+
+  return `${safeBaseName}-${safeSheetName}-normalized.csv`;
+}
+
 export default function LightPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [selectedSheetName, setSelectedSheetName] = useState("");
@@ -78,6 +110,8 @@ export default function LightPage() {
   const duplicateMappedHeaders = useMemo(() => {
     return findDuplicateMappedHeaders(mapping);
   }, [mapping]);
+
+  const canDownloadNormalizedCsv = normalizedRows.length > 0 && Boolean(result);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -141,6 +175,31 @@ export default function LightPage() {
       ...prev,
       [fieldKey]: header,
     }));
+  }
+
+  function handleDownloadNormalizedCsv() {
+    if (!result || normalizedRows.length === 0) {
+      window.alert("다운로드할 정규화 결과가 없습니다.");
+      return;
+    }
+
+    const csvText = buildNormalizedCsvText(normalizedRows);
+    const blob = new Blob([`\uFEFF${csvText}`], {
+      type: "text/csv;charset=utf-8;",
+    });
+    const url = window.URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+
+    anchor.href = url;
+    anchor.download = createNormalizedCsvFileName(
+      result.fileName,
+      result.sheetName
+    );
+
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    window.URL.revokeObjectURL(url);
   }
 
   return (
@@ -496,31 +555,62 @@ export default function LightPage() {
                 boxShadow: "0 10px 30px rgba(0,0,0,0.06)",
               }}
             >
-              <h2
+              <div
                 style={{
-                  marginTop: 0,
-                  marginBottom: "8px",
-                  fontSize: "22px",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "flex-start",
+                  gap: "12px",
+                  flexWrap: "wrap",
                 }}
               >
-                표준 필드 미리보기
-              </h2>
+                <div>
+                  <h2
+                    style={{
+                      marginTop: 0,
+                      marginBottom: "8px",
+                      fontSize: "22px",
+                    }}
+                  >
+                    표준 필드 미리보기
+                  </h2>
 
-              <p
-                style={{
-                  marginTop: 0,
-                  marginBottom: "20px",
-                  color: "#6b7280",
-                }}
-              >
-                현재 매핑 기준으로 정규화된 결과를 미리 보여줍니다.
-              </p>
+                  <p
+                    style={{
+                      marginTop: 0,
+                      marginBottom: 0,
+                      color: "#6b7280",
+                    }}
+                  >
+                    현재 매핑 기준으로 정규화된 결과를 미리 보여줍니다.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleDownloadNormalizedCsv}
+                  disabled={!canDownloadNormalizedCsv}
+                  style={{
+                    background: canDownloadNormalizedCsv ? "#111827" : "#9ca3af",
+                    color: "#ffffff",
+                    border: "none",
+                    borderRadius: "14px",
+                    padding: "12px 16px",
+                    fontWeight: 700,
+                    cursor: canDownloadNormalizedCsv ? "pointer" : "not-allowed",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  정규화 결과 CSV 다운로드
+                </button>
+              </div>
 
               <div
                 style={{
                   overflowX: "auto",
                   border: "1px solid #e5e7eb",
                   borderRadius: "16px",
+                  marginTop: "20px",
                 }}
               >
                 <table
