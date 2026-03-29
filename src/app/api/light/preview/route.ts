@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { readWorkbookPreview } from "../../../../lib/light/workbook-reader";
+import { readWorkbookPreview } from "@/lib/light/workbook-reader";
+import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
 
@@ -13,9 +14,12 @@ function hasAllowedExtension(fileName: string) {
 
 export async function POST(request: Request) {
   try {
+    console.log("[LIGHT_PREVIEW_ROUTE_HIT]");
+
     const formData = await request.formData();
     const file = formData.get("file");
     const sheetNameValue = formData.get("sheetName");
+
     const sheetName =
       typeof sheetNameValue === "string" && sheetNameValue.trim()
         ? sheetNameValue.trim()
@@ -53,12 +57,44 @@ export async function POST(request: Request) {
     const buffer = Buffer.from(arrayBuffer);
     const result = readWorkbookPreview(buffer, file.name, sheetName);
 
+    console.log("[LIGHT_PREVIEW_RESULT]", {
+      fileName: result.fileName,
+      sheetName: result.sheetName,
+      rowCount: result.rowCount,
+      previewCount: result.previewCount,
+    });
+
+    try {
+      const saved = await prisma.lightUploadHistory.create({
+        data: {
+          fileName: result.fileName || file.name,
+          sheetName: result.sheetName || sheetName || "",
+          sheetNames: result.sheetNames,
+          headers: result.headers,
+          rowCount:
+            typeof result.rowCount === "number" && Number.isFinite(result.rowCount)
+              ? result.rowCount
+              : 0,
+          previewCount:
+            typeof result.previewCount === "number" && Number.isFinite(result.previewCount)
+              ? result.previewCount
+              : 0,
+        },
+      });
+
+      console.log("[LIGHT_UPLOAD_HISTORY_CREATED]", saved.id, saved.fileName);
+    } catch (historyError) {
+      console.error("[LIGHT_UPLOAD_HISTORY_CREATE_ERROR]", historyError);
+    }
+
     return NextResponse.json(result);
   } catch (error) {
     const message =
       error instanceof Error
         ? error.message
         : "파일 미리보기 생성 중 오류가 발생했습니다.";
+
+    console.error("[LIGHT_PREVIEW_ROUTE_ERROR]", error);
 
     return NextResponse.json({ message }, { status: 500 });
   }

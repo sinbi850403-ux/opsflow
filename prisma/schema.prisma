@@ -103,3 +103,16 @@ model LightMappingTemplate {
 
   @@index([updatedAt])
 }
+
+model LightUploadHistory {
+  id           String   @id @default(cuid())
+  fileName     String
+  sheetName    String
+  sheetNames   Json
+  headers      Json
+  rowCount     Int
+  previewCount Int
+  createdAt    DateTime @default(now())
+
+  @@index([createdAt])
+}
