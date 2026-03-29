@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import type { LightUploadHistory } from "@prisma/client";
+import DeleteHistoryButton from "@/components/light/DeleteHistoryButton";
 
 type PageProps = {
   params: {
@@ -119,6 +120,7 @@ export default async function LightHistoryDetailPage({ params }: PageProps) {
                 }}
               >
                 저장된 업로드 이력의 기본 정보와 시트 목록, 헤더 목록을 확인할 수 있습니다.
+                필요하면 이 화면에서 기록을 삭제할 수 있습니다.
               </p>
             </div>
 
@@ -403,6 +405,41 @@ export default async function LightHistoryDetailPage({ params }: PageProps) {
                 </p>
               )}
             </div>
+          </div>
+        </section>
+
+        <section
+          style={{
+            background: "#ffffff",
+            border: "1px solid #fecaca",
+            borderRadius: "20px",
+            padding: "20px",
+            boxShadow: "0 10px 30px rgba(15, 23, 42, 0.04)",
+          }}
+        >
+          <h2
+            style={{
+              margin: 0,
+              fontSize: "20px",
+              fontWeight: 800,
+              color: "#991b1b",
+            }}
+          >
+            기록 삭제
+          </h2>
+          <p
+            style={{
+              margin: "10px 0 0",
+              fontSize: "14px",
+              lineHeight: 1.7,
+              color: "#7f1d1d",
+            }}
+          >
+            삭제한 업로드 이력은 목록에서 즉시 사라집니다. 삭제 전 파일명과 내용을 다시 확인하세요.
+          </p>
+
+          <div style={{ marginTop: "16px" }}>
+            <DeleteHistoryButton id={item.id} fileName={item.fileName} />
           </div>
         </section>
       </div>

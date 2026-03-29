@@ -2,6 +2,12 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import type { LightUploadHistory } from "@prisma/client";
 
+type PageProps = {
+  searchParams?: {
+    q?: string | string[];
+  };
+};
+
 function formatDateTime(value: Date | string) {
   const date = value instanceof Date ? value : new Date(value);
 
@@ -24,12 +30,34 @@ function getJsonArrayLength(value: unknown) {
   return Array.isArray(value) ? value.length : 0;
 }
 
-export default async function LightHistoryPage() {
+export default async function LightHistoryPage({ searchParams }: PageProps) {
+  const queryValue = Array.isArray(searchParams?.q)
+    ? searchParams?.q[0] ?? ""
+    : searchParams?.q ?? "";
+
+  const query = queryValue.trim();
+
   const items: LightUploadHistory[] = await prisma.lightUploadHistory.findMany({
+    where: query
+      ? {
+          OR: [
+            {
+              fileName: {
+                contains: query,
+              },
+            },
+            {
+              sheetName: {
+                contains: query,
+              },
+            },
+          ],
+        }
+      : undefined,
     orderBy: {
       createdAt: "desc",
     },
-    take: 50,
+    take: 100,
   });
 
   const totalUploadCount = items.length;
@@ -108,29 +136,124 @@ export default async function LightHistoryPage() {
                   color: "#475569",
                 }}
               >
-                최근 업로드된 파일의 미리보기 실행 기록입니다. 각 기록에서 시트명,
-                전체 행 수, 미리보기 행 수, 헤더 수를 확인할 수 있습니다.
+                최근 업로드된 파일의 미리보기 실행 기록입니다. 파일명 또는 시트명으로
+                검색할 수 있고, 각 기록에서 상세 정보와 삭제 작업까지 이어집니다.
               </p>
             </div>
 
-            <Link
-              href="/light"
+            <div
+              style={{
+                display: "flex",
+                gap: "10px",
+                flexWrap: "wrap",
+              }}
+            >
+              <Link
+                href="/light"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  padding: "12px 16px",
+                  borderRadius: "14px",
+                  textDecoration: "none",
+                  background: "#e2e8f0",
+                  color: "#0f172a",
+                  fontSize: "14px",
+                  fontWeight: 700,
+                }}
+              >
+                Light로 돌아가기
+              </Link>
+
+              <Link
+                href="/light/history"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  padding: "12px 16px",
+                  borderRadius: "14px",
+                  textDecoration: "none",
+                  background: "#0f172a",
+                  color: "#ffffff",
+                  fontSize: "14px",
+                  fontWeight: 700,
+                }}
+              >
+                전체 이력 보기
+              </Link>
+            </div>
+          </div>
+
+          <form
+            action="/light/history"
+            method="GET"
+            style={{
+              display: "flex",
+              gap: "10px",
+              flexWrap: "wrap",
+              marginTop: "20px",
+            }}
+          >
+            <input
+              type="text"
+              name="q"
+              defaultValue={query}
+              placeholder="파일명 또는 시트명 검색"
+              style={{
+                flex: "1 1 320px",
+                minWidth: "260px",
+                border: "1px solid #d1d5db",
+                borderRadius: "14px",
+                padding: "12px 14px",
+                background: "#ffffff",
+                fontSize: "14px",
+              }}
+            />
+
+            <button
+              type="submit"
               style={{
                 display: "inline-flex",
                 alignItems: "center",
                 justifyContent: "center",
-                padding: "12px 16px",
+                minHeight: "48px",
+                padding: "0 18px",
                 borderRadius: "14px",
-                textDecoration: "none",
-                background: "#0f172a",
+                border: "none",
+                background: "#111827",
                 color: "#ffffff",
                 fontSize: "14px",
                 fontWeight: 700,
+                cursor: "pointer",
               }}
             >
-              Light로 돌아가기
-            </Link>
-          </div>
+              검색
+            </button>
+
+            {query ? (
+              <Link
+                href="/light/history"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  minHeight: "48px",
+                  padding: "0 18px",
+                  borderRadius: "14px",
+                  textDecoration: "none",
+                  background: "#ffffff",
+                  border: "1px solid #d1d5db",
+                  color: "#111827",
+                  fontSize: "14px",
+                  fontWeight: 700,
+                }}
+              >
+                검색 초기화
+              </Link>
+            ) : null}
+          </form>
         </section>
 
         <section
@@ -142,7 +265,7 @@ export default async function LightHistoryPage() {
         >
           {[
             {
-              label: "최근 기록 수",
+              label: query ? "검색 결과 수" : "최근 기록 수",
               value: totalUploadCount.toLocaleString("ko-KR"),
               color: "#0f172a",
             },
@@ -249,7 +372,9 @@ export default async function LightHistoryPage() {
                   color: "#0f172a",
                 }}
               >
-                아직 저장된 업로드 이력이 없습니다.
+                {query
+                  ? "검색 조건에 맞는 업로드 이력이 없습니다."
+                  : "아직 저장된 업로드 이력이 없습니다."}
               </p>
               <p
                 style={{
@@ -258,7 +383,9 @@ export default async function LightHistoryPage() {
                   color: "#64748b",
                 }}
               >
-                Light 페이지에서 파일 미리보기를 실행하면 이력이 저장됩니다.
+                {query
+                  ? "검색어를 바꾸거나 초기화해서 다시 확인해주세요."
+                  : "Light 페이지에서 파일 미리보기를 실행하면 이력이 저장됩니다."}
               </p>
             </div>
           ) : (
@@ -267,7 +394,7 @@ export default async function LightHistoryPage() {
                 style={{
                   width: "100%",
                   borderCollapse: "collapse",
-                  minWidth: "900px",
+                  minWidth: "980px",
                 }}
               >
                 <thead>
@@ -289,7 +416,10 @@ export default async function LightHistoryPage() {
                           fontSize: "13px",
                           fontWeight: 700,
                           color: "#475569",
-                          textAlign: label.includes("행") || label === "헤더 수" ? "right" : "left",
+                          textAlign:
+                            label.includes("행") || label === "헤더 수"
+                              ? "right"
+                              : "left",
                           whiteSpace: "nowrap",
                         }}
                       >
