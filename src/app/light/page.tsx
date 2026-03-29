@@ -1180,10 +1180,10 @@ export default function LightPage() {
               <p
                 style={{
                   margin: 0,
-                  fontSize: "12px",
+                  color: "#6b7280",
+                  fontSize: "13px",
                   fontWeight: 700,
-                  letterSpacing: "0.08em",
-                  color: "#64748b",
+                  letterSpacing: "0.14em",
                   textTransform: "uppercase",
                 }}
               >
@@ -1192,11 +1192,10 @@ export default function LightPage() {
 
               <h1
                 style={{
-                  margin: "10px 0 0",
-                  fontSize: "44px",
-                  lineHeight: 1.1,
-                  fontWeight: 800,
-                  color: "#0f172a",
+                  marginTop: "16px",
+                  marginBottom: "12px",
+                  fontSize: "40px",
+                  lineHeight: 1.2,
                 }}
               >
                 엑셀 업로드 미리보기
@@ -1204,15 +1203,15 @@ export default function LightPage() {
 
               <p
                 style={{
-                  margin: "14px 0 0",
-                  maxWidth: "880px",
-                  fontSize: "15px",
+                  margin: 0,
+                  fontSize: "17px",
                   lineHeight: 1.7,
-                  color: "#475569",
+                  color: "#4b5563",
+                  maxWidth: "880px",
                 }}
               >
-                엑셀 또는 CSV 파일을 업로드한 뒤 원하는 시트를 선택하고, 표준 필드 자동
-                매핑 결과를 확인하고, 검증 후 CSV로 내려받을 수 있습니다.
+                엑셀 또는 CSV 파일을 업로드하면 원하는 시트를 선택하고, 표준 필드로
+                자동 매핑된 결과를 확인하고, 검증 후 CSV로 내려받을 수 있습니다.
               </p>
             </div>
 
@@ -1226,12 +1225,11 @@ export default function LightPage() {
                 padding: "0 18px",
                 borderRadius: "14px",
                 textDecoration: "none",
-                background: "#0f172a",
+                background: "#111827",
                 color: "#ffffff",
                 fontSize: "14px",
                 fontWeight: 700,
                 whiteSpace: "nowrap",
-                boxShadow: "0 10px 24px rgba(15, 23, 42, 0.12)",
               }}
             >
               업로드 이력 보기
