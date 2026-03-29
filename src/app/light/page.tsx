@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import {
   useEffect,
   useMemo,
@@ -1166,41 +1167,76 @@ export default function LightPage() {
             boxShadow: "0 10px 30px rgba(0,0,0,0.06)",
           }}
         >
-          <p
+          <div
             style={{
-              margin: 0,
-              color: "#6b7280",
-              fontSize: "13px",
-              fontWeight: 700,
-              letterSpacing: "0.14em",
-              textTransform: "uppercase",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "flex-start",
+              gap: "16px",
+              flexWrap: "wrap",
             }}
           >
-            OpsFlow Light
-          </p>
+            <div>
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: "12px",
+                  fontWeight: 700,
+                  letterSpacing: "0.08em",
+                  color: "#64748b",
+                  textTransform: "uppercase",
+                }}
+              >
+                OpsFlow Light
+              </p>
 
-          <h1
-            style={{
-              marginTop: "16px",
-              marginBottom: "12px",
-              fontSize: "40px",
-              lineHeight: 1.2,
-            }}
-          >
-            엑셀 업로드 미리보기
-          </h1>
+              <h1
+                style={{
+                  margin: "10px 0 0",
+                  fontSize: "44px",
+                  lineHeight: 1.1,
+                  fontWeight: 800,
+                  color: "#0f172a",
+                }}
+              >
+                엑셀 업로드 미리보기
+              </h1>
 
-          <p
-            style={{
-              margin: 0,
-              fontSize: "17px",
-              lineHeight: 1.7,
-              color: "#4b5563",
-            }}
-          >
-            엑셀 또는 CSV 파일을 업로드하면 원하는 시트를 선택하고, 표준 필드로
-            자동 매핑된 결과를 확인하고, 검증 후 CSV로 내려받을 수 있습니다.
-          </p>
+              <p
+                style={{
+                  margin: "14px 0 0",
+                  maxWidth: "880px",
+                  fontSize: "15px",
+                  lineHeight: 1.7,
+                  color: "#475569",
+                }}
+              >
+                엑셀 또는 CSV 파일을 업로드한 뒤 원하는 시트를 선택하고, 표준 필드 자동
+                매핑 결과를 확인하고, 검증 후 CSV로 내려받을 수 있습니다.
+              </p>
+            </div>
+
+            <Link
+              href="/light/history"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                minHeight: "48px",
+                padding: "0 18px",
+                borderRadius: "14px",
+                textDecoration: "none",
+                background: "#0f172a",
+                color: "#ffffff",
+                fontSize: "14px",
+                fontWeight: 700,
+                whiteSpace: "nowrap",
+                boxShadow: "0 10px 24px rgba(15, 23, 42, 0.12)",
+              }}
+            >
+              업로드 이력 보기
+            </Link>
+          </div>
 
           <form
             onSubmit={handleSubmit}
